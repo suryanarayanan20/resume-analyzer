@@ -8,6 +8,7 @@ An AI-powered web application that analyzes resumes and provides intelligent ins
 
 * 📊 Resume Score (based on Skills, Projects, Experience, Education)
 * 🎯 Job Role Matching
+* 📱 Mobile responsive UI improvements
 * 🧠 ATS Score (real-world inspired)
 * 📉 Missing Skills Detection
 * 💡 Smart Suggestions (practical improvements)
@@ -138,7 +139,6 @@ Rules:
 * 📊 Resume history dashboard
 * 🌍 Multiple resume comparison
 * ⚡ Faster AI (caching / optimization)
-* 📱 Mobile responsive UI improvements
 * 🎯 Better ATS accuracy using datasets
 * 🤖 Fine-tuned custom AI model
 
