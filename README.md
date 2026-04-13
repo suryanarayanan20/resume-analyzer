@@ -20,7 +20,7 @@ An AI-powered web application that analyzes resumes and provides intelligent ins
 
 ### 1. Clone Repository
 
-git clone https://github.com/YOUR_USERNAME/resume-analyzer.git
+git clone https://github.com/suryanarayanan20/resume-analyzer.git
 cd resume-analyzer
 
 ---
@@ -152,7 +152,7 @@ https://your-app.onrender.com
 
 ## 👨‍💻 Author
 
-Surya Narayanan
+SuryaNarayanan M
 
 ---
 
