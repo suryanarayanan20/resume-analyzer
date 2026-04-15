@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <title>Resume Analyzer</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
@@ -21,13 +20,11 @@ body {
   color: #e5e7eb;
 }
 
-/* CONTAINER */
 .container {
   display: flex;
   min-height: 100vh;
 }
 
-/* LEFT PANEL */
 .left {
   width: 30%;
   background: #0f172a;
@@ -64,7 +61,6 @@ button {
   cursor: pointer;
 }
 
-/* RIGHT PANEL */
 .right {
   width: 70%;
   padding: 30px;
@@ -105,18 +101,13 @@ button {
   font-weight: bold;
 }
 
-/* 🔥 MOBILE */
+/* MOBILE */
 @media (max-width: 768px) {
-
   .container {
     flex-direction: column;
   }
 
-  .left {
-    width: 100%;
-  }
-
-  .right {
+  .left, .right {
     width: 100%;
   }
 
@@ -210,6 +201,33 @@ async function uploadResume() {
     `;
   } catch {
     document.getElementById("result").innerHTML = "Error";
+  }
+}
+async function downloadPDF(data) {
+  try {
+    const res = await fetch("/download", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(data)
+    });
+
+    if (!res.ok) throw new Error("Server error");
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "resume-analysis.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+  } catch (err) {
+    alert("PDF download failed ❌");
+    console.error(err);
   }
 }
 </script>
