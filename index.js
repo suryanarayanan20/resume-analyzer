@@ -1,5 +1,7 @@
 require("dotenv").config();
 
+const Tesseract = require("tesseract.js");
+const mammoth = require("mammoth"); 
 const PDFDocument = require("pdfkit");
 const express = require("express");
 const cors = require("cors");
@@ -10,50 +12,83 @@ const axios = require("axios");
 
 const app = express();
 
-// 🔥 IMPORTANT
 app.use(cors());
-app.use(express.json()); // for PDF download
+app.use(express.json());
 app.use(express.static("public"));
 
-// File upload
 const upload = multer({ dest: "uploads/" });
 
-// Test route
 app.get("/", (req, res) => {
   res.send("Server is running 🚀");
 });
 
-// 🔥 JSON EXTRACTOR
+// JSON extractor
 function extractJSON(text) {
   try {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      return JSON.parse(match[0]);
+    const first = text.indexOf("{");
+    const last = text.lastIndexOf("}");
+
+    if (first !== -1 && last !== -1) {
+      const jsonString = text.substring(first, last + 1);
+      return JSON.parse(jsonString);
     }
-    return null;
-  } catch {
-    return null;
+  } catch (err) {
+    console.log("JSON PARSE ERROR:", err.message);
   }
+  return null;
 }
 
-// 🔥 AI FUNCTION
+// Resume check
+function isResume(text) {
+  const keywords = [
+    "education",
+    "experience",
+    "skills",
+    "projects",
+    "resume",
+    "objective",
+    "summary"
+  ];
+
+  let count = 0;
+
+  keywords.forEach(word => {
+    if (text.toLowerCase().includes(word)) count++;
+  });
+
+  return count >= 2;
+}
+
+// 🔥 UPDATED AI FUNCTION (ROLE BASED STRICT)
 async function analyzeResume(text, role) {
   try {
     const response = await axios.post(
       "https://router.huggingface.co/v1/chat/completions",
       {
-        model: "meta-llama/Meta-Llama-3-8B-Instruct",
+        model:"meta-llama/Meta-Llama-3-8B-Instruct",
         messages: [
           {
             role: "user",
-            content: `
-You are an expert resume analyzer.
+           content: `
+You are a STRICT ATS resume evaluator.
 
-Analyze ONLY based on given resume content.
+Job Role: ${role}
 
-Compare resume with job role: ${role}
+Analyze the resume ONLY for this role.
 
-Return ONLY pure JSON:
+SCORING RULES:
+- Not relevant → 30–50
+- Partial → 50–70
+- Strong → 70–90
+- Be strict
+
+Also provide:
+
+1. recommended_keywords → important missing keywords for this role
+2. improvement_tips → how to improve resume quality
+3. role_specific_advice → what candidate should do to get this role
+
+Return ONLY JSON:
 
 {
   "score": number,
@@ -63,18 +98,17 @@ Return ONLY pure JSON:
   "strengths": [],
   "weaknesses": [],
   "missing_skills": [],
+  "recommended_keywords": [],
+  "improvement_tips": [],
+  "role_specific_advice": [],
   "suggestions": []
 }
 
 Rules:
-- Score based on skills, projects, experience, education
-- Match score realistic (40–90)
-- ATS score based on keywords, structure, relevance
-- ATS score between 40–95
-- NEVER give 0%
-- Only include missing skills if clearly not present
-- Avoid generic answers
-- Give practical suggestions
+- Keywords must be relevant to role: ${role}
+- Tips must be practical (not generic)
+- Advice must help get job
+- Be strict and realistic
 
 Resume:
 ${text}
@@ -87,15 +121,14 @@ ${text}
         headers: {
           Authorization: `Bearer ${process.env.HF_API_KEY}`,
           "Content-Type": "application/json"
-        },
-        timeout: 60000
+        }
       }
     );
 
     return response.data.choices[0].message.content;
 
   } catch (error) {
-    console.log("HF ERROR:", error.response?.data || error.message);
+    console.log("AI ERROR:", error.message);
 
     return JSON.stringify({
       score: 0,
@@ -110,104 +143,102 @@ ${text}
   }
 }
 
-// 🔥 UPLOAD ROUTE
+// 🔥 UPLOAD ROUTE (ALL FILE SUPPORT)
 app.post("/upload", upload.single("resume"), async (req, res) => {
   try {
-    console.log("API HIT 🔥");
-
-    if (!req.file) {
-      return res.status(400).send("No file uploaded");
-    }
+    if (!req.file) return res.status(400).send("No file uploaded");
 
     const role = req.body.role || "Software Developer";
-
     const buffer = fs.readFileSync(req.file.path);
 
-    let data;
-    try {
-      data = await pdfParse(buffer);
-    } catch (err) {
-      return res.status(400).send("PDF not supported");
+    let text = "";
+
+    // PDF
+    if (req.file.mimetype === "application/pdf") {
+      const data = await pdfParse(buffer);
+      text = data.text;
     }
 
-    if (!data.text || data.text.trim() === "") {
-      return res.status(400).send("No readable text");
+    // DOCX
+    else if (req.file.mimetype.includes("wordprocessingml")) {
+      const result = await mammoth.extractRawText({ buffer });
+      text = result.value;
     }
 
-    const aiResult = await analyzeResume(data.text, role);
+    // TXT
+    else if (req.file.mimetype === "text/plain") {
+      text = buffer.toString();
+    }
 
+    // IMAGE (OCR)
+    else if (req.file.mimetype.startsWith("image/")) {
+      const result = await Tesseract.recognize(buffer, "eng");
+      text = result.data.text;
+    }
+
+    // OTHER
+    else {
+      return res.json({
+        error: "Unsupported file type. Upload PDF, DOCX, TXT or Image"
+      });
+    }
+
+    if (!text || text.trim() === "") {
+      return res.json({ error: "No readable content found" });
+    }
+
+    if (!isResume(text)) {
+      return res.json({
+        error: "This is not a resume. Please upload a valid resume."
+      });
+    }
+
+    const aiResult = await analyzeResume(text, role);
+    console.log("AI RAW RESPONSE:\n", aiResult); 
     const parsed = extractJSON(aiResult);
 
     if (parsed) {
-      res.json(parsed);
-    } else {
-      console.log("JSON ERROR:", aiResult);
-      res.status(500).send("Invalid AI response");
-    }
+  res.json(parsed);
+} else {
+  console.log("PARSE FAILED ❌");
 
+  res.json({
+    error: "AI response invalid. Try again."
+  });
+}
   } catch (error) {
-    console.log("FULL ERROR:", error);
-    res.status(500).send("Something went wrong");
+    console.log("SERVER ERROR:", error);
+    res.status(500).send("Server error");
   }
 });
 
-// 🔥 PDF DOWNLOAD ROUTE
+// PDF download
 app.post("/download", (req, res) => {
-  try {
-    console.log("DOWNLOAD HIT 🔥");
+  const data = req.body;
+  const doc = new PDFDocument();
 
-    const data = req.body;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", "attachment; filename=resume-analysis.pdf");
 
-    const doc = new PDFDocument();
+  doc.pipe(res);
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", "attachment; filename=resume-analysis.pdf");
+  doc.fontSize(20).text("Resume Analysis Report", { align: "center" });
+  doc.moveDown();
 
-    doc.pipe(res);
+  doc.text(`Score: ${data.score}`);
+  doc.text(`Match Score: ${data.match_score}%`);
+  doc.text(`ATS Score: ${data.ats_score}%`);
 
-    // TITLE
-    doc.fontSize(20).text("Resume Analysis Report", { align: "center" });
-    doc.moveDown();
+  doc.moveDown();
+  doc.text("Summary:");
+  doc.text(data.summary);
 
-    // SCORES
-    doc.fontSize(14).text(`Score: ${data.score}`);
-    doc.text(`Match Score: ${data.match_score}%`);
-    doc.text(`ATS Score: ${data.ats_score || 0}%`);
-    doc.moveDown();
+  doc.moveDown();
+  doc.text("Suggestions:");
+  data.suggestions.forEach(s => doc.text("- " + s));
 
-    // SUMMARY
-    doc.text("Summary:");
-    doc.text(data.summary || "N/A");
-    doc.moveDown();
-
-    // STRENGTHS
-    doc.text("Strengths:");
-    (data.strengths || []).forEach(s => doc.text("- " + s));
-    doc.moveDown();
-
-    // WEAKNESSES
-    doc.text("Weaknesses:");
-    (data.weaknesses || []).forEach(w => doc.text("- " + w));
-    doc.moveDown();
-
-    // MISSING SKILLS
-    doc.text("Missing Skills:");
-    (data.missing_skills || []).forEach(m => doc.text("- " + m));
-    doc.moveDown();
-
-    // SUGGESTIONS
-    doc.text("Suggestions:");
-    (data.suggestions || []).forEach(s => doc.text("- " + s));
-
-    doc.end();
-
-  } catch (err) {
-    console.log("PDF ERROR:", err);
-    res.status(500).send("PDF Error");
-  }
+  doc.end();
 });
+
 const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log("Server running 🚀"));

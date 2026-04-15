@@ -124,6 +124,24 @@ button {
   button, input {
     width: 100%;
   }
+
+  /* ERROR BOX */
+.error-box {
+  background: #533197;
+  border: 1px solid #051017;
+  color: #e08550;
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 15px;
+  font-weight: 500;
+}
+
+.back-btn {
+  display: block;
+  margin: 20px auto 0;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #05050f, #22c55e);
+}
 }
 </style>
 </head>
@@ -164,6 +182,17 @@ async function uploadResume() {
   const role = document.getElementById("role").value;
 
   if (!file) return alert("Select file");
+  if (!role.trim()) {
+  document.getElementById("result").innerHTML = `
+    <div class="card">
+      <div class="error-box">
+        ⚠️ Please enter a job role before analyzing.
+      </div>
+      <button class="back-btn" onclick="goBack()">⬅ Back</button>
+    </div>
+  `;
+  return;
+}
 
   const previewURL = URL.createObjectURL(file);
 
@@ -181,28 +210,97 @@ async function uploadResume() {
       body: formData
     });
 
-    const data = await res.json();
+    let data;
 
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error("Invalid JSON");
+    }
+// 🔥 Resume check error
+if (data.error) {
+  document.getElementById("result").innerHTML = `
+    <div class="card">
+      <div class="error-box">
+        ❌ ${data.error}
+      </div>
+      <button class="back-btn" onclick="goBack()">⬅ Back</button>
+    </div>
+  `;
+  return;
+}
+    // 🔥 SUCCESS RESULT
     document.getElementById("result").innerHTML = `
-      <iframe id="preview" src="${previewURL}"></iframe>
+  <button class="back-btn" onclick="goBack()">⬅ Back</button>
 
-      <div class="card"><div class="score-circle">${data.score}</div></div>
+  <iframe id="preview" src="${previewURL}"></iframe>
 
-      <div class="card"><b>Match:</b> <span class="match">${data.match_score}%</span></div>
+  <div class="card">
+    <div class="score-circle">${data.score || 0}</div>
+  </div>
 
-      <div class="card"><b>ATS:</b> <span class="match">${data.ats_score}%</span></div>
+  <div class="card">
+    <b>Match:</b> <span class="match">${data.match_score || 0}%</span>
+  </div>
 
-      <div class="card"><b>Summary:</b><p>${data.summary}</p></div>
+  <div class="card">
+    <b>ATS:</b> <span class="match">${data.ats_score || 0}%</span>
+  </div>
 
-      <div class="card"><b>Suggestions:</b>
-      <ul>${data.suggestions.map(s => `<li>${s}</li>`).join("")}</ul></div>
+  <div class="card">
+    <b>Summary:</b>
+    <p>${data.summary || "No summary available"}</p>
+  </div>
 
-      <button onclick='downloadPDF(${JSON.stringify(data)})'>Download PDF</button>
+  <div class="card">
+    <b>Suggestions:</b>
+    <ul>${(data.suggestions || []).map(s => `<li>${s}</li>`).join("")}</ul>
+  </div>
+
+  <div class="card">
+    <b>Recommended Keywords:</b>
+    <ul>${(data.recommended_keywords || []).map(k => `<li>${k}</li>`).join("")}</ul>
+  </div>
+
+  <div class="card">
+    <b>Improvement Tips:</b>
+    <ul>${(data.improvement_tips || []).map(t => `<li>${t}</li>`).join("")}</ul>
+  </div>
+
+  <div class="card">
+    <b>Role Specific Advice:</b>
+    <ul>${(data.role_specific_advice || []).map(a => `<li>${a}</li>`).join("")}</ul>
+  </div>
+
+  <button onclick='downloadPDF(${JSON.stringify(data)})'>
+    Download PDF
+  </button>
+`;
+
+  } catch (err) {
+    document.getElementById("result").innerHTML = `
+      <div class="card">
+        <div class="error-box">
+  ⚠️ Something went wrong. Please try again.
+</div>
+<button class="back-btn" onclick="goBack()">⬅ Back</button>
+      
+      </div>
     `;
-  } catch {
-    document.getElementById("result").innerHTML = "Error";
+    console.error(err);
   }
 }
+
+
+// 🔥 BACK BUTTON
+function goBack() {
+  document.getElementById("result").innerHTML = `
+    <iframe id="preview"></iframe>
+    <p>Upload resume to see results</p>
+  `;
+}
+
+// 🔥 DOWNLOAD PDF
 async function downloadPDF(data) {
   try {
     const res = await fetch("/download", {
@@ -231,6 +329,3 @@ async function downloadPDF(data) {
   }
 }
 </script>
-
-</body>
-</html>
